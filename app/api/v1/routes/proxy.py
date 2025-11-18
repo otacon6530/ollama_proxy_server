@@ -116,7 +116,7 @@ async def extract_eval_counts_stream(raw_stream):
     """
     Intercepts each chunk, extracts prompt_eval_count and eval_count if present.
     """
-    for chunk in raw_stream:
+    async for chunk in raw_stream:
         try:
             lines = chunk.split(b'\n')
             for line in lines:
@@ -128,8 +128,9 @@ async def extract_eval_counts_stream(raw_stream):
                 if prompt_eval_count is not None or eval_count is not None:
                     logger.info(f"prompt_eval_count: {prompt_eval_count}, eval_count: {eval_count}")
         except Exception:
-            pass 
+            pass
         yield chunk
+
 
 async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer], body_bytes: bytes = b"") -> Tuple[Response, OllamaServer]:
     """
