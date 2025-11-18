@@ -59,6 +59,8 @@ class UsageLog(Base):
     request_timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     server_id = Column(Integer, ForeignKey("ollama_servers.id"), nullable=True)
     model = Column(String, nullable=True, index=True)
+    eval_count = Column(Integer, nullable=True)
+    prompt_eval_count = Column(Integer, nullable=True)
 
     api_key = relationship("APIKey", back_populates="usage_logs")
     server = relationship("OllamaServer")

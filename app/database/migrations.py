@@ -391,6 +391,8 @@ async def run_all_migrations(engine: AsyncEngine) -> None:
             "usage_logs": {
                 "model": "VARCHAR",
                 "server_id": "INTEGER",
+                "eval_count": "INTEGER",
+                "prompt_eval_count": "INTEGER",
             },
             "model_metadata": {
                 "id": "INTEGER NOT NULL PRIMARY KEY",
