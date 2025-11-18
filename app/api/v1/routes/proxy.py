@@ -112,6 +112,24 @@ async def _send_backend_request(
         logger.debug(f"Request to {server.url} failed: {type(e).__name__}: {str(e)}")
         raise
 
+async def extract_eval_counts_stream(raw_stream):
+    """
+    Intercepts each chunk, extracts prompt_eval_count and eval_count if present.
+    """
+    for chunk in raw_stream:
+        try:
+            lines = chunk.split(b'\n')
+            for line in lines:
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                prompt_eval_count = data.get("prompt_eval_count")
+                eval_count = data.get("eval_count")
+                if prompt_eval_count is not None or eval_count is not None:
+                    logger.info(f"prompt_eval_count: {prompt_eval_count}, eval_count: {eval_count}")
+        except Exception:
+            pass 
+        yield chunk
 
 async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer], body_bytes: bytes = b"") -> Tuple[Response, OllamaServer]:
     """
@@ -188,8 +206,13 @@ async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer
                 f"in {retry_result.total_duration_ms:.1f}ms"
             )
 
+            if path in ("generate", "chat"):
+                stream = extract_eval_counts_stream(backend_response.aiter_raw())
+            else:
+                stream = backend_response.aiter_raw()
+
             response = StreamingResponse(
-                backend_response.aiter_raw(),
+                stream,
                 status_code=backend_response.status_code,
                 headers=backend_response.headers,
             )
