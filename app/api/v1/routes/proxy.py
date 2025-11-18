@@ -551,6 +551,7 @@ async def proxy_ollama(
     # Proxy to one of the candidate servers
     response, chosen_server, token_counts = await _reverse_proxy(request, path, candidate_servers, body_bytes)
 
+    logger.info(f'eval_count:{token_counts.eval_count}, prompt_eval_count:{token_counts.eval_count}')
     await log_crud.create_usage_log(
         db=db,
         api_key_id=api_key.id,
