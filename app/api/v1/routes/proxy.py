@@ -134,6 +134,10 @@ async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts, log_
         except Exception:
             pass
         yield chunk
+    # Close the underlying HTTP response if present
+    backend_response = log_args.get("backend_response")
+    if backend_response:
+        await backend_response.aclose()
     await log_crud.create_usage_log(
         db=log_args["db"],
         api_key_id=log_args["api_key_id"],
