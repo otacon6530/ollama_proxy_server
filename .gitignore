@@ -111,3 +111,8 @@ app/static/uploads/
 
 # Lollms vscoder files
 .lollms
+
+#visual studio
+.vs/
+/.vs/ollama_proxy_server/CopilotIndices/0.2.1657.32929/CodeChunks.db-wal
+/.vs/ollama_proxy_server/CopilotIndices/0.2.1657.32929/SemanticSymbols.db-wal
