@@ -213,7 +213,7 @@ async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer
             if path in ("generate", "chat"):
                 token_counts = TokenCounts()
                 stream = extract_eval_counts_stream(backend_response.aiter_raw(), token_counts)
-                response = StreamingResponse(stream, ...)
+                response = StreamingResponse(stream, status_code=backend_response.status_code, headers=backend_response.headers)
                 return response, chosen_server, token_counts
             else:
                 stream = backend_response.aiter_raw()
