@@ -141,8 +141,8 @@ async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts, log_
         status_code=log_args["status_code"],
         server_id=log_args["server_id"],
         model=log_args["model"],
-        eval_count=token_counts.eval_count,
-        prompt_eval_count=token_counts.prompt_eval_count
+        eval_count=lambda: token_counts.eval_count,
+        prompt_eval_count=lambda: token_counts.prompt_eval_count
     )
 
 async def _reverse_proxy(
@@ -244,16 +244,26 @@ async def _reverse_proxy(
                 
                 stream = extract_eval_counts_stream(backend_response.aiter_raw(), token_counts, log_args)
                 response = StreamingResponse(stream, status_code=backend_response.status_code, headers=backend_response.headers)
-                return response, chosen_server, token_counts
+                return response
             else:
                 stream = backend_response.aiter_raw()
+                await log_crud.create_usage_log(
+                    db=log_args["db"],
+                    api_key_id=log_args["api_key_id"],
+                    endpoint=log_args["endpoint"],
+                    status_code=log_args["status_code"],
+                    server_id=log_args["server_id"],
+                    model=log_args["model"],
+                    eval_count=None,
+                    prompt_eval_count=None
+                )
 
             response = StreamingResponse(
                 stream,
                 status_code=backend_response.status_code,
                 headers=backend_response.headers,
             )
-            return response, chosen_server, None
+            return response
         else:
             # This server failed after all retries, try next server
             logger.warning(
@@ -579,5 +589,5 @@ async def proxy_ollama(
             )
 
     # Proxy to one of the candidate servers
-    response, chosen_server, token_counts = await _reverse_proxy(request, path, servers, body_bytes, db=db, api_key=api_key, model_name=model_name)
+    response = await _reverse_proxy(request, path, servers, body_bytes, db=db, api_key=api_key, model_name=model_name)
     return response
