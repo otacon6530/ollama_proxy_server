@@ -141,8 +141,8 @@ async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts, log_
         status_code=log_args["status_code"],
         server_id=log_args["server_id"],
         model=log_args["model"],
-        eval_count=lambda: token_counts.eval_count,
-        prompt_eval_count=lambda: token_counts.prompt_eval_count
+        eval_count=token_counts.eval_count,
+        prompt_eval_count=token_counts.prompt_eval_count
     )
 
 async def _reverse_proxy(
