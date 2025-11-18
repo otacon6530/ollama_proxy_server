@@ -117,7 +117,7 @@ class TokenCounts:
         self.prompt_eval_count = None
         self.eval_count = None
 
-async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts):
+async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts, log_args: dict):
     async for chunk in raw_stream:
         try:
             lines = chunk.split(b'\n')
@@ -134,8 +134,26 @@ async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts):
         except Exception:
             pass
         yield chunk
+    await log_crud.create_usage_log(
+        db=log_args["db"],
+        api_key_id=log_args["api_key_id"],
+        endpoint=log_args["endpoint"],
+        status_code=log_args["status_code"],
+        server_id=log_args["server_id"],
+        model=log_args["model"],
+        eval_count=token_counts.eval_count,
+        prompt_eval_count=token_counts.prompt_eval_count
+    )
 
-async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer], body_bytes: bytes = b"") -> Tuple[Response, OllamaServer]:
+async def _reverse_proxy(
+    request: Request,
+    path: str,
+    servers: List[OllamaServer],
+    body_bytes: bytes = b"",
+    db: AsyncSession = None,
+    api_key: APIKey = None,
+    model_name: str = None
+) -> Tuple[Response, OllamaServer, Optional[TokenCounts]]:
     """
     Core reverse proxy logic with retry support. Forwards the request to a backend
     Ollama server and streams the response back. Returns the response and the chosen server.
@@ -210,9 +228,21 @@ async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer
                 f"in {retry_result.total_duration_ms:.1f}ms"
             )
 
+
+            log_args = dict(
+                    db=db,
+                    api_key_id=api_key.id,
+                    endpoint=f"/api/{path}",
+                    status_code=200,  # You can use response.status_code if available
+                    server_id=chosen_server.id,
+                    model=model_name,
+                    eval_count=lambda: token_counts.eval_count,
+                    prompt_eval_count=lambda: token_counts.prompt_eval_count
+                )
             if path in ("generate", "chat"):
                 token_counts = TokenCounts()
-                stream = extract_eval_counts_stream(backend_response.aiter_raw(), token_counts)
+                
+                stream = extract_eval_counts_stream(backend_response.aiter_raw(), token_counts, log_args)
                 response = StreamingResponse(stream, status_code=backend_response.status_code, headers=backend_response.headers)
                 return response, chosen_server, token_counts
             else:
@@ -549,18 +579,5 @@ async def proxy_ollama(
             )
 
     # Proxy to one of the candidate servers
-    response, chosen_server, token_counts = await _reverse_proxy(request, path, candidate_servers, body_bytes)
-
-    logger.info(f'eval_count:{token_counts.eval_count}, prompt_eval_count:{token_counts.eval_count}')
-    await log_crud.create_usage_log(
-        db=db,
-        api_key_id=api_key.id,
-        endpoint=f"/api/{path}",
-        status_code=response.status_code,
-        server_id=chosen_server.id,
-        model=model_name,
-        eval_count=token_counts.eval_count if token_counts else None,
-        prompt_eval_count=token_counts.prompt_eval_count if token_counts else None
-    )
-
+    response, chosen_server, token_counts = await _reverse_proxy(request, path, servers, body_bytes, db=db, api_key=api_key, model_name=model_name)
     return response
