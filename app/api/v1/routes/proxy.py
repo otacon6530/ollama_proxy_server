@@ -112,10 +112,12 @@ async def _send_backend_request(
         logger.debug(f"Request to {server.url} failed: {type(e).__name__}: {str(e)}")
         raise
 
-async def extract_eval_counts_stream(raw_stream):
-    """
-    Intercepts each chunk, extracts prompt_eval_count and eval_count if present.
-    """
+class TokenCounts:
+    def __init__(self):
+        self.prompt_eval_count = None
+        self.eval_count = None
+
+async def extract_eval_counts_stream(raw_stream, token_counts: TokenCounts):
     async for chunk in raw_stream:
         try:
             lines = chunk.split(b'\n')
@@ -125,12 +127,13 @@ async def extract_eval_counts_stream(raw_stream):
                 data = json.loads(line)
                 prompt_eval_count = data.get("prompt_eval_count")
                 eval_count = data.get("eval_count")
-                if prompt_eval_count is not None or eval_count is not None:
-                    logger.info(f"prompt_eval_count: {prompt_eval_count}, eval_count: {eval_count}")
+                if prompt_eval_count is not None:
+                    token_counts.prompt_eval_count = prompt_eval_count
+                if eval_count is not None:
+                    token_counts.eval_count = eval_count
         except Exception:
             pass
         yield chunk
-
 
 async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer], body_bytes: bytes = b"") -> Tuple[Response, OllamaServer]:
     """
@@ -208,7 +211,10 @@ async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer
             )
 
             if path in ("generate", "chat"):
-                stream = extract_eval_counts_stream(backend_response.aiter_raw())
+                token_counts = TokenCounts()
+                stream = extract_eval_counts_stream(backend_response.aiter_raw(), token_counts)
+                response = StreamingResponse(stream, ...)
+            return response, chosen_server, token_counts
             else:
                 stream = backend_response.aiter_raw()
 
@@ -217,7 +223,7 @@ async def _reverse_proxy(request: Request, path: str, servers: List[OllamaServer
                 status_code=backend_response.status_code,
                 headers=backend_response.headers,
             )
-            return response, chosen_server
+            return response, chosen_server, None
         else:
             # This server failed after all retries, try next server
             logger.warning(
@@ -253,6 +259,8 @@ async def _proxy_to_vllm(
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     model_name = ollama_payload.get("model")
+    eval_count = 0
+    prompt_eval_count = 0
     
     headers = {}
     if server.encrypted_api_key:
@@ -541,7 +549,7 @@ async def proxy_ollama(
             )
 
     # Proxy to one of the candidate servers
-    response, chosen_server = await _reverse_proxy(request, path, candidate_servers, body_bytes)
+    response, chosen_server, token_counts = await _reverse_proxy(request, path, candidate_servers, body_bytes)
 
     await log_crud.create_usage_log(
         db=db,
@@ -549,7 +557,9 @@ async def proxy_ollama(
         endpoint=f"/api/{path}",
         status_code=response.status_code,
         server_id=chosen_server.id,
-        model=model_name
+        model=model_name,
+        eval_count=token_counts.eval_count if token_counts else None,
+        prompt_eval_count=token_counts.prompt_eval_count if token_counts else None
     )
 
     return response
